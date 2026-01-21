@@ -1,0 +1,103 @@
+import cv2
+import time
+import base64
+import requests
+import os
+
+# ================== CONFIG ==================
+OPENROUTER_API_KEY = "YOUR_OPENROUTER_API_KEY"
+MODEL = "openai/gpt-5-chat"
+IMAGE_PATH = "test.jpg"
+PREVIEW_SECONDS = 5
+# ============================================
+
+
+print("Opening camera... :)")
+cap = cv2.VideoCapture(0)
+
+if not cap.isOpened():
+    print("Camera not found :(")
+    exit(1)
+
+start_time = time.time()
+
+print("Showing preview (5 seconds)... :)")
+while time.time() - start_time < PREVIEW_SECONDS:
+    ret, frame = cap.read()
+    if not ret:
+        print("Failed to read frame :(")
+        break
+
+    cv2.imshow("Camera Preview - Capturing Soon :)", frame)
+
+    # Press Q to cancel
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        print("Cancelled by user :)")
+        cap.release()
+        cv2.destroyAllWindows()
+        exit(0)
+
+# Capture final frame
+ret, frame = cap.read()
+cap.release()
+cv2.destroyAllWindows()
+
+if not ret:
+    print("Failed to capture image :(")
+    exit(1)
+
+cv2.imwrite(IMAGE_PATH, frame)
+print("Image captured and saved as test.jpg :)")
+
+# ============ SEND IMAGE TO AI ============
+
+with open(IMAGE_PATH, "rb") as f:
+    image_base64 = base64.b64encode(f.read()).decode("utf-8")
+
+prompt = (
+    "Look at this image and answer in ONE sentence only. "
+    "First say what the object is, then say whether it is "
+    "biodegradable or non-biodegradable."
+)
+
+payload = {
+    "model": MODEL,
+    "messages": [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{image_base64}"
+                    }
+                }
+            ]
+        }
+    ],
+    "max_tokens": 200
+}
+
+headers = {
+    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+    "Content-Type": "application/json"
+}
+
+print("Asking Beluga AI...")
+response = requests.post(
+    "https://openrouter.ai/api/v1/chat/completions",
+    headers=headers,
+    json=payload
+)
+
+if response.status_code != 200:
+    print("API Error:", response.text)
+else:
+    result = response.json()
+    print("\nAI BELUGA RESPONSE:\n")
+    print(result["choices"][0]["message"]["content"])
+
+# Cleanup
+os.remove(IMAGE_PATH)
+print("\nImage deleted")
